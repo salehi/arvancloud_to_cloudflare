@@ -1,6 +1,20 @@
 # Arvan to Cloudflare DNS Migration Tool
 
-A Python script to backup DNS records from Arvan Cloud and convert them to Cloudflare-compatible import format.
+A tool to backup DNS records from Arvan Cloud and convert them to Cloudflare-compatible import format. Available as a **Python CLI** and as a **zero-install web page**.
+
+## 🌐 Use it in your browser (no install)
+
+A static web version runs the whole conversion client-side — no Python, no backend:
+
+👉 **https://salehi.github.io/arvancloud_to_cloudflare/**
+
+1. Paste your Arvan Cloud API key
+2. Pick a domain
+3. Download the Cloudflare-ready import file
+
+**Your API key never leaves your browser.** GitHub Pages serves only static files; requests go directly from your browser to Arvan Cloud's API (which sends `Access-Control-Allow-Origin: *`, so no proxy is involved). Nothing is logged or sent to any third party. The page source lives in [`www/index.html`](www/index.html).
+
+> Prefer automation, cron jobs, or exporting *all* domains at once? Use the Python CLI below.
 
 ## Features
 

@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Arvan → Cloudflare DNS Export</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #181b24;
+    --panel-2: #1f2330;
+    --border: #2a2f3d;
+    --text: #e6e8ee;
+    --muted: #9aa3b2;
+    --accent: #f38020;        /* Cloudflare orange */
+    --accent-2: #ff5c39;      /* Arvan-ish red */
+    --ok: #3fb950;
+    --err: #f85149;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 32px 16px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 28px; }
+  header h1 { font-size: 1.6rem; margin: 0 0 6px; }
+  header h1 .arv { color: var(--accent-2); }
+  header h1 .cf  { color: var(--accent); }
+  header p { color: var(--muted); margin: 0; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 18px;
+  }
+  .card h2 {
+    font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 0 0 14px;
+  }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--panel-2); border: 1px solid var(--border);
+    font-size: .72rem; margin-right: 8px; color: var(--text);
+  }
+  label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+  input[type=password], input[type=text], select, textarea {
+    width: 100%; padding: 10px 12px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    font: inherit; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; white-space: pre; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  .row > * { flex: 1; min-width: 0; }
+  .row > .btn-wrap { flex: 0 0 auto; }
+  button {
+    padding: 10px 16px; border-radius: 8px; border: 1px solid transparent;
+    font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap;
+    background: var(--accent); color: #1a1205;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.secondary { background: var(--panel-2); color: var(--text); border-color: var(--border); }
+  .checkbox { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: .85rem; }
+  .checkbox input { width: auto; }
+  .status { margin-top: 12px; font-size: .88rem; min-height: 1.2em; }
+  .status.ok  { color: var(--ok); }
+  .status.err { color: var(--err); }
+  .status.busy { color: var(--muted); }
+  .hidden { display: none; }
+  .actions { display: flex; gap: 10px; margin-top: 12px; }
+  .meta { color: var(--muted); font-size: .82rem; margin-top: 8px; }
+  footer { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 24px; }
+  footer a { color: var(--accent); }
+  .note {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 12px 14px; font-size: .85rem; color: var(--muted);
+  }
+  .note strong { color: var(--text); }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: .85em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="arv">Arvan Cloud</span> → <span class="cf">Cloudflare</span> DNS Export</h1>
+    <p>Export a domain's DNS records and download a Cloudflare-ready import file — entirely in your browser.</p>
+  </header>
+
+  <div class="note">
+    🔒 <strong>Your API key never leaves your browser.</strong> This is a static page (GitHub Pages serves only
+    files — no server runs here). Requests go directly from your browser to Arvan Cloud's API. Nothing is logged or
+    proxied. View the <a id="src-link" href="#" target="_blank" rel="noopener">source</a>.
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h2><span class="step-num">1</span>API key</h2>
+    <label for="apikey">Arvan Cloud API key
+      (Dashboard → Profile → API Keys; DNS read permission is enough)</label>
+    <div class="row">
+      <input type="password" id="apikey" placeholder="Apikey ..." autocomplete="off" spellcheck="false" />
+      <div class="btn-wrap"><button id="fetchBtn">Fetch domains</button></div>
+    </div>
+    <label class="checkbox">
+      <input type="checkbox" id="remember" />
+      Remember key in this browser (stored in localStorage — only use on a device you trust)
+    </label>
+    <div class="status" id="keyStatus"></div>
+  </div>
+
+  <div class="card hidden" id="domainCard">
+    <h2><span class="step-num">2</span>Pick a domain</h2>
+    <div class="row">
+      <div>
+        <label for="domainSelect">Domain</label>
+        <select id="domainSelect"></select>
+      </div>
+      <div class="btn-wrap"><button id="convertBtn">Convert</button></div>
+    </div>
+    <div class="status" id="convertStatus"></div>
+  </div>
+
+  <div class="card hidden" id="outputCard">
+    <h2><span class="step-num">3</span>Result</h2>
+    <textarea id="output" readonly spellcheck="false"></textarea>
+    <div class="meta" id="outputMeta"></div>
+    <div class="actions">
+      <button class="secondary" id="copyBtn">Copy</button>
+      <button id="downloadBtn">Download .txt</button>
+    </div>
+    <div class="note" style="margin-top:14px">
+      <strong>Import into Cloudflare:</strong> Dashboard → your domain → <strong>DNS → Records</strong> →
+      <strong>Import DNS records</strong> → upload this file. <code>NS</code> records are skipped (Cloudflare manages
+      those). Always review before confirming.
+    </div>
+  </div>
+
+  <footer>
+    Not affiliated with Arvan Cloud or Cloudflare. Verify records before importing to production.
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+const BASE = "https://napi.arvancloud.ir/cdn/4.0";
+const LS_KEY = "arvan_api_key";
+
+const $ = (id) => document.getElementById(id);
+const apikeyEl = $("apikey");
+const rememberEl = $("remember");
+const fetchBtn = $("fetchBtn");
+const keyStatus = $("keyStatus");
+const domainCard = $("domainCard");
+const domainSelect = $("domainSelect");
+const convertBtn = $("convertBtn");
+const convertStatus = $("convertStatus");
+const outputCard = $("outputCard");
+const outputEl = $("output");
+const outputMeta = $("outputMeta");
+const copyBtn = $("copyBtn");
+const downloadBtn = $("downloadBtn");
+
+let currentDomain = "";
+
+// Link "source" to this file in the repo if served from github.io, else to the local file.
+(function setSourceLink() {
+  const link = $("src-link");
+  const { hostname, pathname } = location;
+  if (hostname.endsWith("github.io")) {
+    // https://user.github.io/repo/  ->  https://github.com/user/repo/blob/main/www/index.html
+    const user = hostname.split(".")[0];
+    const repo = pathname.split("/").filter(Boolean)[0] || "";
+    link.href = repo
+      ? `https://github.com/${user}/${repo}/blob/main/www/index.html`
+      : `https://github.com/${user}`;
+  } else {
+    link.href = "index.html";
+  }
+})();
+
+// Restore a remembered key.
+(function restoreKey() {
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) { apikeyEl.value = saved; rememberEl.checked = true; }
+  } catch (_) {}
+})();
+
+function setStatus(el, msg, kind) {
+  el.textContent = msg;
+  el.className = "status" + (kind ? " " + kind : "");
+}
+
+function authHeaders(key) {
+  const trimmed = key.trim();
+  // Accept either the raw key or a full "Apikey xxx" string.
+  const value = /^apikey\s/i.test(trimmed) ? trimmed : `Apikey ${trimmed}`;
+  return { Authorization: value, "Content-Type": "application/json" };
+}
+
+async function apiGet(path, key) {
+  const res = await fetch(BASE + path, { headers: authHeaders(key) });
+  if (res.status === 401 || res.status === 403)
+    throw new Error("Invalid API key or insufficient permissions (HTTP " + res.status + ").");
+  if (!res.ok)
+    throw new Error("Request failed: HTTP " + res.status + " " + res.statusText);
+  return res.json();
+}
+
+async function fetchAllDomains(key) {
+  const all = [];
+  let page = 1;
+  // Walk pagination defensively: follow meta.last_page/total_pages if present,
+  // otherwise keep going while a full page comes back.
+  while (page <= 50) {
+    const json = await apiGet(`/domains?page=${page}&per_page=100`, key);
+    const data = Array.isArray(json.data) ? json.data : [];
+    all.push(...data);
+    const meta = json.meta || {};
+    const lastPage = meta.last_page ?? meta.total_pages ?? null;
+    if (lastPage != null) { if (page >= lastPage) break; }
+    else if (data.length < 100) break;
+    page++;
+  }
+  return all;
+}
+
+fetchBtn.addEventListener("click", async () => {
+  const key = apikeyEl.value.trim();
+  if (!key) { setStatus(keyStatus, "Please enter your API key.", "err"); return; }
+
+  try { localStorage.setItem(LS_KEY, rememberEl.checked ? key : ""); if (!rememberEl.checked) localStorage.removeItem(LS_KEY); } catch (_) {}
+
+  fetchBtn.disabled = true;
+  setStatus(keyStatus, "Fetching domains…", "busy");
+  try {
+    const domains = await fetchAllDomains(key);
+    if (!domains.length) {
+      setStatus(keyStatus, "No domains found in this account.", "err");
+      domainCard.classList.add("hidden");
+      return;
+    }
+    domainSelect.innerHTML = "";
+    domains
+      .map((d) => d.domain)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name; opt.textContent = name;
+        domainSelect.appendChild(opt);
+      });
+    setStatus(keyStatus, `Found ${domains.length} domain(s).`, "ok");
+    domainCard.classList.remove("hidden");
+  } catch (err) {
+    setStatus(keyStatus, err.message || String(err), "err");
+    domainCard.classList.add("hidden");
+  } finally {
+    fetchBtn.disabled = false;
+  }
+});
+
+convertBtn.addEventListener("click", async () => {
+  const key = apikeyEl.value.trim();
+  const domain = domainSelect.value;
+  if (!domain) return;
+
+  convertBtn.disabled = true;
+  setStatus(convertStatus, `Exporting DNS records for ${domain}…`, "busy");
+  try {
+    const recordsData = await apiGet(`/domains/${encodeURIComponent(domain)}/dns-records`, key);
+    const content = jsonToCloudflareImport(recordsData, domain);
+    const count = Array.isArray(recordsData.data) ? recordsData.data.length : 0;
+    if (!content) {
+      setStatus(convertStatus, `No records found for ${domain}.`, "err");
+      outputCard.classList.add("hidden");
+      return;
+    }
+    currentDomain = domain;
+    outputEl.value = content;
+    outputMeta.textContent = `${count} record(s) exported from Arvan. NS records are excluded.`;
+    setStatus(convertStatus, "Done.", "ok");
+    outputCard.classList.remove("hidden");
+    outputCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (err) {
+    setStatus(convertStatus, err.message || String(err), "err");
+    outputCard.classList.add("hidden");
+  } finally {
+    convertBtn.disabled = false;
+  }
+});
+
+copyBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(outputEl.value);
+    copyBtn.textContent = "Copied!";
+    setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+  } catch (_) {
+    outputEl.select();
+    document.execCommand("copy");
+  }
+});
+
+downloadBtn.addEventListener("click", () => {
+  const blob = new Blob([outputEl.value], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${currentDomain}_dns_backup_cloudflare_${timestamp()}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+function timestamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+// Faithful port of json_to_cloudflare_import() from arvan_to_cloudflare.py
+function jsonToCloudflareImport(recordsData, domain) {
+  if (!recordsData || !("data" in recordsData)) return "";
+  const lines = [];
+  lines.push(`; DNS records for ${domain}`);
+  lines.push(`; Exported from Arvan Cloud on ${new Date().toISOString()}`);
+  lines.push(`; Format: Cloudflare import compatible`);
+  lines.push("");
+
+  for (const record of recordsData.data) {
+    const recordType = String(record.type).toUpperCase();
+    if (recordType === "NS") continue;
+
+    let name = record.name;
+    const ttl = record.ttl ?? 300;
+
+    if (name === "@" || name === domain) {
+      name = domain;
+    } else if (!String(name).endsWith(`.${domain}`)) {
+      name = name ? `${name}.${domain}` : domain;
+    }
+
+    if (recordType === "A" || recordType === "AAAA") {
+      for (const valueItem of (record.value || [])) {
+        const ip = (valueItem && valueItem.ip) || "";
+        if (ip) lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${ip}`);
+      }
+    } else if (recordType === "ANAME") {
+      let value = record.value ?? {};
+      if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length) {
+        value = value.host_header === "source" ? value.location : value.host_header;
+      }
+      if (typeof value === "string" && value && !value.endsWith(".")) value += ".";
+      lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${value}`);
+    } else if (recordType === "CNAME") {
+      let value = record.value ?? {};
+      if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length) {
+        value = value.host_header === "source" ? value.host : value.host_header;
+      }
+      if (typeof value === "string" && value && !value.endsWith(".")) value += ".";
+      lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${value}`);
+    } else if (recordType === "MX") {
+      const value = record.value ?? "";
+      if (Array.isArray(value) && value.length) {
+        const mx = value[0];
+        const priority = mx.priority ?? 10;
+        let exchange = mx.value ?? mx.exchange ?? "";
+        if (exchange && !String(exchange).endsWith(".")) exchange += ".";
+        lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${priority}\t${exchange}`);
+      } else if (typeof value === "string") {
+        lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${value}`);
+      }
+    } else if (recordType === "TXT") {
+      let value = (record.value && record.value.text) ?? "";
+      if (value && !(value.startsWith('"') && value.endsWith('"'))) value = `"${value}"`;
+      lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${value}`);
+    } else if (recordType === "SRV") {
+      const value = record.value ?? "";
+      if (Array.isArray(value) && value.length) {
+        const srv = value[0];
+        const priority = srv.priority ?? 0;
+        const weight = srv.weight ?? 0;
+        const port = srv.port ?? 0;
+        let target = srv.target ?? srv.value ?? "";
+        if (target && !String(target).endsWith(".")) target += ".";
+        lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${priority}\t${weight}\t${port}\t${target}`);
+      } else if (typeof value === "string") {
+        lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${value}`);
+      }
+    } else {
+      let value = record.value ?? "";
+      if (Array.isArray(value) && value.length) {
+        value = typeof value[0] === "string" ? value[0] : String(value[0]);
+      }
+      lines.push(`${name}\t${ttl}\tIN\t${recordType}\t${value}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+</script>
+</body>
+</html>
